@@ -19,7 +19,8 @@ def main():
     analyze_new_song(conn.cursor(), conn, "song5.wav")
 
     best_match_song = analyze_query_song("query_song1.wav", conn.cursor())
-
+    if best_match_song:
+        print(f"Best match for query_song1.wav: {best_match_song}")
 
 
 if __name__ == "__main__":

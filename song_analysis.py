@@ -77,7 +77,7 @@ def create_threshold(spectrogram):
     return np.mean(spectrogram) + np.std(spectrogram)
 
 
-def filering_peaks(spectrogram, peaks, frame_size, sr, thresshold=0.4, minF=50, maxF=5000): 
+def filering_peaks(spectrogram, peaks, frame_size, sr, threshold=0.4, minF=50, maxF=5000): 
     filtered_peaks = [
         p for p in peaks 
         if minF <= frequency(frame_size, sr, p[1]) <= maxF and spectrogram[p[0], p[1]] >= threshold
@@ -155,15 +155,25 @@ def find_best_match(counts_matches):
 
 def analyze_new_song(cur, conn, song_file, song_name):
     samples, sr, n_frames = open_song_wav(song_file)
+    print(1)
     frame_sz = frame_size(sr)
+    print(2)
     frame_size_power_of_2 = make_power_of_2(frame_sz)
+    print(3)
     frames_list = frames(samples, frame_size_power_of_2)
+    print(4)
     spectrogram = create_spectrogram(frames_list)
+    print(5)
     peaks = find_peaks(spectrogram, range_peak = 10)
+    print(6)
     threshold = create_threshold(spectrogram)
+    print(7)
     filtered_peaks = filering_peaks(spectrogram, peaks, frame_size_power_of_2, sr, threshold)
+    print(8)
     all_hashes = process_peaks(song_name, filtered_peaks, frame_size_power_of_2, sr)
+    print(9)
     store_hashes(all_hashes, cur, conn)
+    print(10)
 
 
 def analyze_query_song(song_file, cur):

@@ -62,7 +62,7 @@ def find_peaks(spectrogram, range_peak):
             is_peak = True
 
             for i in range(t-3, t+2):
-                for j in range(spectrogram[t]-3, spectrogram[t]+2):
+                for j in range(f-3, f+2):
                     if i != t and j != f and spectrogram[i][j] >= value:
                         is_peak = False
             

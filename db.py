@@ -1,6 +1,5 @@
 def init_db(conn):
     with conn.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS fingerprints;")
         cur.execute("CREATE TABLE IF NOT EXISTS fingerprints (hash VARCHAR(40) NOT NULL, song_id TEXT NOT NULL, offset_time FLOAT NOT NULL);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hash ON fingerprints USING HASH (hash);") 
         conn.commit()

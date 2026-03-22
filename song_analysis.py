@@ -1,6 +1,6 @@
 import wave 
 import numpy as np
-from fft import fft,volume
+from fft import fft,volume, make_power_of_2
 import hashlib
 from db import insert_many_fingerprints
 
@@ -72,7 +72,7 @@ def find_peaks(spectrogram, range_peak):
     return peaks    
 
 
-def threshold(spectrogram):
+def create_threshold(spectrogram):
     return np.mean(spectrogram) + np.std(spectrogram)
 
 
@@ -152,27 +152,29 @@ def find_best_match(counts_matches):
     return best_match, counts_matches[best_match]
 
 
-def analyze_new_song(cur, conn, song_file):
+def analyze_new_song(cur, conn, song_file, song_name):
     samples, sr, n_frames = open_song_wav(song_file)
     frame_sz = frame_size(sr)
-    frames_list = frames(samples, frame_sz)
+    frame_size_power_of_2 = make_power_of_2(frame_sz)
+    frames_list = frames(samples, frame_size_power_of_2)
     spectrogram = create_spectrogram(frames_list)
     peaks = find_peaks(spectrogram, range_peak = 10)
-    threshold = threshold(spectrogram)
-    filtered_peaks = filering_peaks(spectrogram, peaks, frame_sz, sr, threshold)
-    all_hashes = process_peaks(song_file, filtered_peaks, frame_sz, sr)
+    threshold = create_threshold(spectrogram)
+    filtered_peaks = filering_peaks(spectrogram, peaks, frame_size_power_of_2, sr, threshold)
+    all_hashes = process_peaks(song_name, filtered_peaks, frame_size_power_of_2, sr)
     store_hashes(all_hashes, cur, conn)
 
 
 def analyze_query_song(song_file, cur):
     samples, sr, n_frames = open_song_wav(song_file)
     frame_sz = frame_size(sr)
-    frames_list = frames(samples, frame_sz)
+    frame_size_power_of_2 = make_power_of_2(frame_sz)
+    frames_list = frames(samples, frame_size_power_of_2)
     spectrogram = create_spectrogram(frames_list)
     peaks = find_peaks(spectrogram, range_peak = 10)
-    threshold = threshold(spectrogram)
-    filtered_peaks = filering_peaks(spectrogram, peaks, frame_sz, sr, threshold)
-    query_hashes = process_query_peaks(filtered_peaks, frame_sz, sr)
+    threshold = create_threshold(spectrogram)
+    filtered_peaks = filering_peaks(spectrogram, peaks, frame_size_power_of_2, sr, threshold)
+    query_hashes = process_query_peaks(filtered_peaks, frame_size_power_of_2, sr)
     matches = find_matches(query_hashes, cur)
     best_match_song, match_count = find_best_match(matches)
 

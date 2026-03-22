@@ -16,5 +16,7 @@ def volume(x):
     return [abs(val) for val in x]
 
 
-def frequency(sample_rate, N, i):
-    return (sample_rate*i)/N
+def make_power_of_2(n):
+    if n == 0:
+        return 1
+    return 2**((n-1).bit_length())

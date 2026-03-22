@@ -138,11 +138,18 @@ def find_matches(hashes, cur):
         cur.execute("SELECT song_id, offset_time FROM fingerprints WHERE hash = %s", (h,))
         results = cur.fetchall()
 
-        for song_id in results:
-            counts_matches[song_id] = counts_matches.get(song_id, 0) + 1
-
+        for song_name in results:
+            counts_matches[song_name] = counts_matches.get(song_name, 0) + 1
+    
     return counts_matches
 
+
+def find_best_match(counts_matches):
+    if len(counts_matches) == 0:
+        return None
+
+    best_match = max(counts_matches, key=counts_matches.get)
+    return best_match, counts_matches[best_match]
 
 
 def analyze_new_song(cur, conn, song_file):
@@ -157,7 +164,7 @@ def analyze_new_song(cur, conn, song_file):
     store_hashes(all_hashes, cur, conn)
 
 
-def analyze_query_song(song_file):
+def analyze_query_song(song_file, cur):
     samples, sr, n_frames = open_song_wav(song_file)
     frame_sz = frame_size(sr)
     frames_list = frames(samples, frame_sz)
@@ -166,5 +173,7 @@ def analyze_query_song(song_file):
     threshold = threshold(spectrogram)
     filtered_peaks = filering_peaks(spectrogram, peaks, frame_sz, sr, threshold)
     query_hashes = process_query_peaks(filtered_peaks, frame_sz, sr)
+    matches = find_matches(query_hashes, cur)
+    best_match_song, match_count = find_best_match(matches)
 
-    return filtered_peaks
+    return best_match_song

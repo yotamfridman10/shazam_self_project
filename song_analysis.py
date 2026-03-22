@@ -43,13 +43,14 @@ def frames(samples, frame_size):
 
 
 def create_spectrogram(frames):
-    spectrogram = []
+    spectrogram2 = []
 
     for frame in frames: 
         fft_frame = fft(frame)
         magnitude = volume(fft_frame)
-        spectrogram.append(magnitude)
+        spectrogram2.append(magnitude)
     
+    spectrogram = np.array(spectrogram2)
     return spectrogram
 
 

@@ -2,7 +2,7 @@ import wave
 import numpy as np
 from fft import fft,volume, make_power_of_2
 import hashlib
-from db import insert_many_fingerprints
+from db import insert_many_fingerprints, insert_many_fingerprints_copy
 
 
 def open_song_wav(song_file):
@@ -103,13 +103,13 @@ def process_peaks(song_name, peaks, frame_size, sr, max_range=25): # max_range=2
 
             all_hashes.append((h, song_name, anchor_time))
 
+    print(len(all_hashes))
     return all_hashes
 
 
 def store_hashes(all_hashes, cur, conn):
     if len(all_hashes) > 0:
-        insert_many_fingerprints(cur, all_hashes)
-        conn.commit()
+        insert_many_fingerprints_copy(conn, all_hashes)
 
 
 def process_query_peaks(peaks, frame_size, sr, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec

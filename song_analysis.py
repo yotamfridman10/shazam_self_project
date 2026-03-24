@@ -2,7 +2,9 @@ import wave
 import numpy as np
 from fft import fft,volume, make_power_of_2
 import hashlib
-from db import insert_many_fingerprints, insert_many_fingerprints_copy
+from db import get_matches_for_hashes, insert_many_fingerprints, insert_many_fingerprints_copy
+from collections import defaultdict
+
 
 
 def open_song_wav(song_file):
@@ -24,14 +26,14 @@ def open_song_wav(song_file):
 
 
 def frame_size(sr, size = 0.02): # defult size = 0.02
-    return int(size*sr)
+    return make_power_of_2(int(size*sr))
         
 
 def frequency(frame_size, sr, k):
     return (k*sr)//frame_size
 
 
-def frames(samples, frame_size):
+def split_into_frames(samples, frame_size):
     frames = []
     for i in range(0, len(samples), frame_size):
         frame = samples[i : i + frame_size]
@@ -54,38 +56,62 @@ def create_spectrogram(frames):
     return spectrogram
 
 
-def find_peaks(spectrogram, range_peak):
+def find_peaks(spectrogram, frame_size, sr, threshold, minF=50, maxF=5000, neighborhood = 3):
     peaks = []
 
-    for t in range(3, len(spectrogram)-3):
-        for f in range(3, len(spectrogram[0])-3):
-            value = spectrogram[t][f]
+    for t in range(neighborhood, len(spectrogram)-neighborhood):
+        for f in range(neighborhood, len(spectrogram[0])-neighborhood):
+            value = spectrogram[t, f]
             is_peak = True
 
-            for i in range(t-3, t+2):
-                for j in range(f-3, f+2):
-                    if i != t and j != f and spectrogram[i][j] >= value:
-                        is_peak = False
-            
-            if is_peak == True:
+            if value < threshold:
+                continue
+            if not (minF <= frequency(frame_size, sr, f) <= maxF):
+                continue
+
+            patch = spectrogram[t - neighborhood: t + neighborhood + 1, f - neighborhood: f + neighborhood + 1,]
+            if value == patch.max() and (patch == value).sum() == 1:
                 peaks.append((t, f))
-        
-    return peaks    
+            
+    return filter_peaks(spectrogram, peaks)    
+
+
+
+def filter_peaks(spectrogram, peaks, window_frames=25, max_per_window=5):
+    if not peaks:
+        return []
+ 
+    filtered = []
+    window_peaks = [peaks[0]]
+    window_start_t = (peaks[0])[0]
+ 
+    for peak in peaks[1:]:
+        if peak[0] > window_start_t + window_frames:
+            top = sorted(window_peaks, key=lambda p: spectrogram[p[0], p[1]], reverse=True,)[:max_per_window]
+            filtered.extend(top)
+            window_start_t = peak[0]
+            window_peaks = [peak]
+        else:
+            window_peaks.append(peak)
+ 
+    if window_peaks:
+        top = sorted(window_peaks, key=lambda p: spectrogram[p[0], p[1]], reverse=True,)[:max_per_window]
+        filtered.extend(top)
+ 
+    return filtered       
+
+
+def make_hash(f1, f2, delta_t):
+    fingerprint_str = f"{f1},{f2},{delta_t:.4f}"
+    return hashlib.sha1(fingerprint_str.encode()).hexdigest()
 
 
 def create_threshold(spectrogram):
-    return np.mean(spectrogram) + np.std(spectrogram)
+    return np.mean(spectrogram) + 2 * np.std(spectrogram)
 
 
-def filering_peaks(spectrogram, peaks, frame_size, sr, threshold=0.4, minF=50, maxF=5000): 
-    filtered_peaks = [
-        p for p in peaks 
-        if minF <= frequency(frame_size, sr, p[1]) <= maxF and spectrogram[p[0], p[1]] >= threshold
-    ]
-    return filtered_peaks
-
-def process_peaks(song_name, peaks, frame_size, sr, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec
-    all_hashes = []
+def make_fingerprints(peaks, frame_size, sr, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec
+    fingerprints = []
 
     for i, p1 in enumerate(peaks):
         for p2 in peaks[i + 1:]:
@@ -94,99 +120,84 @@ def process_peaks(song_name, peaks, frame_size, sr, max_range=25): # max_range=2
             
             f1 = int(frequency(frame_size, sr, p1[1]))
             f2 = int(frequency(frame_size, sr, p2[1]))
+            delta_t = (p2[0] - p1[0]) * frame_size / sr
             
-            fingerprint = (f1, f2, (p2[0]-p1[0])*frame_size/sr)
-            fingerprint_str = str(fingerprint)
-            h = hashlib.sha1(fingerprint_str.encode()).hexdigest()
-
+            h = make_hash(f1, f2, delta_t)
             anchor_time = p1[0] * frame_size / sr
-
-            all_hashes.append((h, song_name, anchor_time))
-
-    print(len(all_hashes))
-    return all_hashes
-
-
-def store_hashes(all_hashes, cur, conn):
-    if len(all_hashes) > 0:
-        insert_many_fingerprints_copy(conn, all_hashes)
-
-
-def process_query_peaks(peaks, frame_size, sr, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec
-    query_hashes = []
-
-    for i, p1 in enumerate(peaks):
-        for p2 in peaks[i + 1:]:
-            if p2[0] > p1[0] + max_range:
-                break
+            fingerprints.append((h, anchor_time))
             
-            f1 = int(frequency(frame_size, sr, p1[1]))
-            f2 = int(frequency(frame_size, sr, p2[1]))
-            
-            fingerprint = (f1, f2, (p2[0]-p1[0])*frame_size/sr)
-            fingerprint_str = str(fingerprint)
-            h = hashlib.sha1(fingerprint_str.encode()).hexdigest()
-            query_hashes.append(h)
-
-    return query_hashes
+    return fingerprints
 
 
+def store_fingerprints(song_name, fingerprints, conn):
+    records = [(h, song_name, t) for h, t in fingerprints]
+    if records:
+        insert_many_fingerprints_copy(conn, records)
 
-def find_matches(hashes, cur):
-    counts_matches = {}
 
-    for h in hashes:
-        cur.execute("SELECT song_id, offset_time FROM fingerprints WHERE hash = %s", (h,))
-        results = cur.fetchall()
+def find_matches(query_fingerprints, cur):
+    if not query_fingerprints:
+        return {}
+     
+    hash_to_qtimes = defaultdict(list)
+    for h, qt in query_fingerprints:
+        hash_to_qtimes[h].append(qt)
 
-        for song_name in results:
-            counts_matches[song_name] = counts_matches.get(song_name, 0) + 1
+    hashes = list(hash_to_qtimes.keys())
+    db_rows = get_matches_for_hashes(hashes, cur)
+
+    delta_counts = defaultdict(int)
+    for db_hash, song_name, db_offset in db_rows:
+        for qt in hash_to_qtimes[db_hash]:
+            delta = round(db_offset - qt, 1)        
+            delta_counts[(song_name, delta)] += 1
     
-    return counts_matches
+    if not delta_counts:
+        return {}
+    
+    song_best = {}
+    for (song_name, delta), count in delta_counts.items():
+        if count > song_best.get(song_name, 0):
+            song_best[song_name] = count
+ 
+    return song_best
 
 
 def find_best_match(counts_matches):
-    if len(counts_matches) == 0:
-        return None
+    if not counts_matches:
+        return None, 0
 
     best_match = max(counts_matches, key=counts_matches.get)
     return best_match, counts_matches[best_match]
 
 
-def analyze_new_song(cur, conn, song_file, song_name):
-    samples, sr, n_frames = open_song_wav(song_file)
-    print(1)
+def pipeline(song_file):
+    samples, sr, _ = open_song_wav(song_file)
     frame_sz = frame_size(sr)
-    print(2)
-    frame_size_power_of_2 = make_power_of_2(frame_sz)
-    print(3)
-    frames_list = frames(samples, frame_size_power_of_2)
-    print(4)
-    spectrogram = create_spectrogram(frames_list)
-    print(5)
-    peaks = find_peaks(spectrogram, range_peak = 10)
-    print(6)
+    frames_arr = split_into_frames(samples, frame_sz)
+    spectrogram = create_spectrogram(frames_arr)
     threshold = create_threshold(spectrogram)
-    print(7)
-    filtered_peaks = filering_peaks(spectrogram, peaks, frame_size_power_of_2, sr, threshold)
-    print(8)
-    all_hashes = process_peaks(song_name, filtered_peaks, frame_size_power_of_2, sr)
-    print(9)
-    store_hashes(all_hashes, cur, conn)
-    print(10)
+    peaks = find_peaks(spectrogram, frame_sz, sr, threshold)
+    return peaks, frame_sz, sr
 
 
+def analyze_new_song(conn, song_file, song_name):
+    print(f"[index] {song_name}")
+    peaks, frame_sz, sr = pipeline(song_file)
+    print(f"  peaks found: {len(peaks)}")
+    fingerprints = make_fingerprints(peaks, frame_sz, sr)
+    print(f"  fingerprints: {len(fingerprints)}")
+    store_fingerprints(song_name, fingerprints, conn)
+    print(f"  stored OK")
+ 
+ 
 def analyze_query_song(song_file, cur):
-    samples, sr, n_frames = open_song_wav(song_file)
-    frame_sz = frame_size(sr)
-    frame_size_power_of_2 = make_power_of_2(frame_sz)
-    frames_list = frames(samples, frame_size_power_of_2)
-    spectrogram = create_spectrogram(frames_list)
-    peaks = find_peaks(spectrogram, range_peak = 10)
-    threshold = create_threshold(spectrogram)
-    filtered_peaks = filering_peaks(spectrogram, peaks, frame_size_power_of_2, sr, threshold)
-    query_hashes = process_query_peaks(filtered_peaks, frame_size_power_of_2, sr)
-    matches = find_matches(query_hashes, cur)
-    best_match_song, match_count = find_best_match(matches)
-
-    return best_match_song
+    print(f"[query] {song_file}")
+    peaks, frame_sz, sr = pipeline(song_file)
+    print(f"  peaks found: {len(peaks)}")
+    fingerprints = make_fingerprints(peaks, frame_sz, sr)
+    print(f"  fingerprints: {len(fingerprints)}")
+    scores = find_matches(fingerprints, cur)
+    print(f"  scores: {scores}")
+    best_song, count = find_best_match(scores)
+    return best_song, count

@@ -1,4 +1,6 @@
-import asyncio, psycopg2, time, os
+import asyncio 
+from psycopg2 import connect                              # only .connect() is used
+from os import cpu_count 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from db import init_db
 from song_analysis import analyze_new_song as analyze1
@@ -6,20 +8,21 @@ from song_analysis import analyze_query_song as analyze_query1
 from song_analysis_unorginal import analyze_new_song as analyze2
 from song_analysis_unorginal import analyze_query_song as analyze_query2
 
+DB_CONFIG = dict(
+    dbname="songs_fingerprints_db",
+    user="postgres",
+    password="1234",
+    host="localhost"
+)
+
 
 def process_song(song_file, song_name, method):
-   conn = psycopg2.connect(
-      dbname="songs_fingerprints_db", 
-      user="postgres", 
-      password="1234", 
-      host="localhost"
-   )
+   conn = connect(**DB_CONFIG)
    try:
       if method == 1:
          analyze1(conn, song_file, song_name)
       else:
          analyze2(conn, song_file, song_name)
-      conn.commit()
       print(f"Finished successfully analyze{method} of the song: {song_name}")
    except Exception as e:
       conn.rollback() 
@@ -29,7 +32,7 @@ def process_song(song_file, song_name, method):
 
 
 def run_parallel_storage(songs):
-   with ProcessPoolExecutor(max_workers=8) as executor:
+   with ProcessPoolExecutor(max_workers = cpu_count() - 2) as executor:
       futures = []
 
       for song_file, song_name in songs:
@@ -44,17 +47,12 @@ def run_parallel_storage(songs):
       
 
 def query_song(song_file, method):
-   conn = psycopg2.connect(
-      dbname="songs_fingerprints_db", 
-      user="postgres", 
-      password="1234", 
-      host="localhost"
-   )
+   conn = connect(**DB_CONFIG)
    try:
       if method == 1:
-         best_match_song = analyze_query1(conn, song_file)
+         best_match_song = analyze_query1(song_file, conn)
       else:
-         best_match_song = analyze_query2(conn, song_file) 
+         best_match_song = analyze_query2(song_file, conn) 
       return song_file, best_match_song
    except Exception as e:
       print(f"Error processing {song_file}: {e}")
@@ -78,12 +76,7 @@ async def run_queries(song_files, method=2):
 
 def main():
 
-   conn = psycopg2.connect(
-      dbname="songs_fingerprints_db", 
-      user="postgres", 
-      password="1234", 
-      host="localhost"
-   )
+   conn = connect(**DB_CONFIG)
 
    init_db(conn, True)
    conn.close()

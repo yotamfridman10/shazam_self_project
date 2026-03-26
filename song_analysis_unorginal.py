@@ -1,13 +1,11 @@
-import librosa
-import numpy as np
-from db import insert_many_windows, get_all_windows_by_song
-import math
+from librosa import load, pyin, yin
+from numpy import log2, array, std, corrcoef, prod
 from collections import defaultdict
-
+from db import insert_many_windows, get_all_windows_by_song
 
 def pitch(song_file):
-    waveF, sr = librosa.load(song_file)
-    f0, voiced_flag, voiced_probs = librosa.pyin(waveF, fmin=80, fmax=1000, frame_length=2048, hop_length=256)
+    waveF, sr = load(song_file)
+    f0, voiced_flag, voiced_probs = pyin(waveF, fmin=80, fmax=1000, frame_length=2048, hop_length=256)
     frequency_per_time = f0[voiced_flag]
 
     # f0 = librosa.yin(waveF, fmin=80, fmax=1000, frame_length=2048, hop_length=256)
@@ -17,7 +15,7 @@ def pitch(song_file):
 
 
 def MIDI(f):
-    return 69 + 12 * np.log2(f / 440.0)
+    return 69 + 12 * log2(f / 440.0)
 
 
 def create_line(frequency_per_time):
@@ -97,19 +95,19 @@ def edit_distance(seq1, seq2):
 
 
 def correlation(a, b):
-    a = np.array(a)
-    b = np.array(b)
+    a = array(a)
+    b = array(b)
 
     if len(a) != len(b):
         return 0
 
-    if np.std(a) == 0 or np.std(b) == 0:
+    if std(a) == 0 or std(b) == 0:
         return 0
 
-    return np.corrcoef(a, b)[0, 1]
+    return corrcoef(a, b)[0, 1]
 
 
-def comparing_windows_by_edit_distance(cur, relative, window_range=20):
+def comparing_windows_by_edit_distance(conn, relative, window_range=20):
     if len(relative) == 0: 
         return None
     
@@ -120,7 +118,7 @@ def comparing_windows_by_edit_distance(cur, relative, window_range=20):
     best_song_match = ""
  
     windows = list(split_list(relative))           
-    for song_name, song_windows in get_all_windows_by_song(cur):
+    for song_name, song_windows in get_all_windows_by_song(conn):
         for i in range(0, len(song_windows) - len(windows) +1):
             for j in range(0, len(windows) - 1):
                 ed += edit_distance(song_windows[i + j], windows[j])
@@ -138,7 +136,7 @@ def comparing_windows_by_edit_distance(cur, relative, window_range=20):
     return best_match, best_song_match
 
 
-def comparing_windows_by_correlation(cur, relative, window_range=20):
+def comparing_windows_by_correlation(conn, relative, window_range=20):
     if len(relative) == 0: 
         return None
     
@@ -149,7 +147,7 @@ def comparing_windows_by_correlation(cur, relative, window_range=20):
     best_song_match = ""
  
     windows = list(split_list(relative))           
-    for song_name, song_windows in get_all_windows_by_song(cur):
+    for song_name, song_windows in get_all_windows_by_song(conn):
         for i in range(0, len(song_windows) - len(windows) +1):
             for j in range(0, len(windows) - 1):
                 if correlation(song_windows[i + j], windows[j]) > 0.6:
@@ -169,7 +167,7 @@ def comparing_windows_by_correlation(cur, relative, window_range=20):
     return best_match, best_song_match
 
 
-def comparing_windows_geometric_correlation(cur, relative, window_range=20):
+def comparing_windows_geometric_correlation(conn, relative, window_range=20):
     if len(relative) == 0:
         return None
 
@@ -178,7 +176,7 @@ def comparing_windows_geometric_correlation(cur, relative, window_range=20):
     best_song_match = ""
     windows = list(split_list(relative))
 
-    for song_name, song_windows in get_all_windows_by_song(cur):
+    for song_name, song_windows in get_all_windows_by_song(conn):
         max_cor = 0
 
         for i in range(0, len(song_windows) - len(windows) + 1):
@@ -194,7 +192,7 @@ def comparing_windows_geometric_correlation(cur, relative, window_range=20):
 
             # לפחות חצי מהחלונות צריכים להיות טובים
             if len(cors) >= len(windows) // 2:
-                cor = np.prod(cors) ** (1 / len(cors))
+                cor = prod(cors) ** (1 / len(cors))
                 if cor > max_cor:
                     max_cor = cor
 
@@ -206,7 +204,7 @@ def comparing_windows_geometric_correlation(cur, relative, window_range=20):
     return best_match, best_song_match
 
 
-def comparing_windows_min_correlation(cur, relative, window_range=20):
+def comparing_windows_min_correlation(conn, relative, window_range=20):
     if len(relative) == 0:
         return None
 
@@ -215,7 +213,7 @@ def comparing_windows_min_correlation(cur, relative, window_range=20):
     best_song_match = ""
     windows = list(split_list(relative))
 
-    for song_name, song_windows in get_all_windows_by_song(cur):
+    for song_name, song_windows in get_all_windows_by_song(conn):
         max_cor = 0
 
         for i in range(0, len(song_windows) - len(windows) + 1):
@@ -255,10 +253,10 @@ def analyze_new_song(conn, song_file, song_name):
     print(f"  stored OK")
 
 
-def analyze_query_song(song_file, cur):
+def analyze_query_song(song_file, conn):
     print(f"[query] {song_file}")
     relative = pipeline(song_file)
-    matches, best_song_match = comparing_windows_by_correlation(cur, relative)
+    matches, best_song_match = comparing_windows_by_correlation(conn, relative)
     print(f"  matches: {matches}")
     return best_song_match
     

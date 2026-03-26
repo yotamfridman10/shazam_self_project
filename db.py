@@ -71,22 +71,25 @@ def get_all_windows(cur):
     return rows
 
 
-def get_all_windows_by_song(cur):
+def get_all_windows_by_song(conn, batch_size=10000):
     song_windows = []
     last_song = None
 
-    cur.execute("SELECT song_name, relative_seq FROM windows ORDER BY id")
-    for row in cur:
-        song_name, relative_seq = row
-        if last_song is None:
+    with conn.cursor("windows_stream_cursor") as cur:
+        cur.itersize = batch_size  
+        cur.execute("SELECT song_name, relative_seq FROM windows ORDER BY id")
+
+        for row in cur:
+            song_name, relative_seq = row
+            if last_song is None:
+                last_song = song_name
+
+            if song_name != last_song:
+                yield last_song, song_windows
+                song_windows = []
+
+            song_windows.append((relative_seq))
             last_song = song_name
 
-        if song_name != last_song:
+        if song_windows:
             yield last_song, song_windows
-            song_windows = []
-
-        song_windows.append((relative_seq))
-        last_song = song_name
-
-    if song_windows:
-        yield last_song, song_windows

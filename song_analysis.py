@@ -1,13 +1,13 @@
-import wave 
-import numpy as np
-from fft import fft,volume, make_power_of_2
-import hashlib
-from db import get_matches_for_hashes, insert_many_fingerprints, insert_many_fingerprints_copy
+from wave import open as open_wave
+from numpy import frombuffer, array, mean, std, int16
+from hashlib import sha1
 from collections import defaultdict
+from fft import fft, volume, make_power_of_2
+from db import get_matches_for_hashes, insert_many_fingerprints_copy
 
 
 def open_song_wav(song_file):
-    with wave.open(song_file, "rb") as wf:
+    with open_wave(song_file, "rb") as wf:
         n_channels = wf.getnchannels()
         sample_width = wf.getsampwidth() 
         sr = wf.getframerate()
@@ -15,7 +15,7 @@ def open_song_wav(song_file):
 
         frames = wf.readframes(n_frames)
 
-    samples = np.frombuffer(frames, dtype = np.int16)
+    samples = frombuffer(frames, dtype = int16)
 
     if n_channels == 2:
         samples = samples.reshape(-1, 2)
@@ -62,7 +62,7 @@ def create_hz_form_frames(frames, sr, frame_size, minF=80, maxF=8000):
 
 def create_spectrogram(frames, sr, frame_size):
       magnitude, jump = create_hz_form_frames(frames, sr, frame_size)
-      return np.array(magnitude), jump
+      return array(magnitude), jump
     
 
 def find_peaks(spectrogram, frame_size, sr, threshold, minF=80, maxF=8000, neighborhood = 3):
@@ -112,11 +112,11 @@ def filter_peaks(spectrogram, peaks, window_frames=25, max_per_window=5):
 
 def make_hash(f1, f2, delta_t):
     fingerprint_str = f"{f1},{f2},{delta_t:.4f}"
-    return hashlib.sha1(fingerprint_str.encode()).hexdigest()
+    return sha1(fingerprint_str.encode()).hexdigest()
 
 
 def create_threshold(spectrogram):
-    return np.mean(spectrogram) + 2 * np.std(spectrogram)
+    return mean(spectrogram) + 2 * std(spectrogram)
 
 
 def make_fingerprints(peaks, frame_size, sr, jump, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec

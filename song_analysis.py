@@ -6,7 +6,6 @@ from db import get_matches_for_hashes, insert_many_fingerprints, insert_many_fin
 from collections import defaultdict
 
 
-
 def open_song_wav(song_file):
     with wave.open(song_file, "rb") as wf:
         n_channels = wf.getnchannels()
@@ -33,6 +32,10 @@ def frequency(frame_size, sr, k):
     return (k*sr)//frame_size
 
 
+def index_frequency(frame_size, sr, f):
+    return (f*frame_size)//sr
+
+
 def split_into_frames(samples, frame_size):
     frames = []
     for i in range(0, len(samples), frame_size):
@@ -44,19 +47,25 @@ def split_into_frames(samples, frame_size):
     return frames
 
 
-def create_spectrogram(frames):
-    spectrogram2 = []
+def create_hz_form_frames(frames, sr, frame_size, minF=80, maxF=8000):
+    magnitude = []
+    low_idx = index_frequency(frame_size, sr, minF)
+    high_idx = index_frequency(frame_size, sr, maxF)
 
     for frame in frames: 
         fft_frame = fft(frame)
-        magnitude = volume(fft_frame)
-        spectrogram2.append(magnitude)
+        fft_data = volume(fft_frame)
+        magnitude.append(fft_data[low_idx : high_idx])
+
+    return magnitude, low_idx
+
+
+def create_spectrogram(frames, sr, frame_size):
+      magnitude, jump = create_hz_form_frames(frames, sr, frame_size)
+      return np.array(magnitude), jump
     
-    spectrogram = np.array(spectrogram2)
-    return spectrogram
 
-
-def find_peaks(spectrogram, frame_size, sr, threshold, minF=50, maxF=5000, neighborhood = 3):
+def find_peaks(spectrogram, frame_size, sr, threshold, minF=80, maxF=8000, neighborhood = 3):
     peaks = []
 
     for t in range(neighborhood, len(spectrogram)-neighborhood):
@@ -110,7 +119,7 @@ def create_threshold(spectrogram):
     return np.mean(spectrogram) + 2 * np.std(spectrogram)
 
 
-def make_fingerprints(peaks, frame_size, sr, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec
+def make_fingerprints(peaks, frame_size, sr, jump, max_range=25): # max_range=25 in frames equls to 25*0.02=0.5 sec
     fingerprints = []
 
     for i, p1 in enumerate(peaks):
@@ -118,8 +127,8 @@ def make_fingerprints(peaks, frame_size, sr, max_range=25): # max_range=25 in fr
             if p2[0] > p1[0] + max_range:
                 break
             
-            f1 = int(frequency(frame_size, sr, p1[1]))
-            f2 = int(frequency(frame_size, sr, p2[1]))
+            f1 = int(frequency(frame_size, sr, p1[1] + jump))
+            f2 = int(frequency(frame_size, sr, p2[1] + jump))
             delta_t = (p2[0] - p1[0]) * frame_size / sr
             
             h = make_hash(f1, f2, delta_t)
@@ -171,21 +180,23 @@ def find_best_match(counts_matches):
     return best_match, counts_matches[best_match]
 
 
+
 def pipeline(song_file):
     samples, sr, _ = open_song_wav(song_file)
     frame_sz = frame_size(sr)
     frames_arr = split_into_frames(samples, frame_sz)
-    spectrogram = create_spectrogram(frames_arr)
+    spectrogram, jump = create_spectrogram(frames_arr, sr, frame_sz)
     threshold = create_threshold(spectrogram)
     peaks = find_peaks(spectrogram, frame_sz, sr, threshold)
-    return peaks, frame_sz, sr
+    return peaks, frame_sz, sr, jump
+
 
 
 def analyze_new_song(conn, song_file, song_name):
     print(f"[index] {song_name}")
-    peaks, frame_sz, sr = pipeline(song_file)
+    peaks, frame_sz, sr, jump = pipeline(song_file)
     print(f"  peaks found: {len(peaks)}")
-    fingerprints = make_fingerprints(peaks, frame_sz, sr)
+    fingerprints = make_fingerprints(peaks, frame_sz, sr, jump)
     print(f"  fingerprints: {len(fingerprints)}")
     store_fingerprints(song_name, fingerprints, conn)
     print(f"  stored OK")
@@ -193,9 +204,9 @@ def analyze_new_song(conn, song_file, song_name):
  
 def analyze_query_song(song_file, cur):
     print(f"[query] {song_file}")
-    peaks, frame_sz, sr = pipeline(song_file)
+    peaks, frame_sz, sr, jump = pipeline(song_file)
     print(f"  peaks found: {len(peaks)}")
-    fingerprints = make_fingerprints(peaks, frame_sz, sr)
+    fingerprints = make_fingerprints(peaks, frame_sz, sr, jump)
     print(f"  fingerprints: {len(fingerprints)}")
     scores = find_matches(fingerprints, cur)
     print(f"  scores: {scores}")

@@ -1,8 +1,8 @@
 import asyncio 
-from psycopg2 import connect                              # only .connect() is used
+from psycopg2 import connect                             
 from os import cpu_count 
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from db import init_db
+from db import init_db, is_song_in_db
 from song_analysis import analyze_new_song as analyze1
 from song_analysis import analyze_query_song as analyze_query1
 from song_analysis_unorginal import analyze_new_song as analyze2
@@ -32,6 +32,9 @@ def process_song(song_file, song_name, method):
 
 
 def run_parallel_storage(songs):
+   if len(songs) == 0:
+      return
+   
    with ProcessPoolExecutor(max_workers = cpu_count() - 2) as executor:
       futures = []
 
@@ -78,11 +81,9 @@ def main():
 
    conn = connect(**DB_CONFIG)
 
-   init_db(conn, True)
-   conn.close()
+   init_db(conn)
 
-   
-   analyze_songs = [
+   songs = [
       ("music/song1.wav", "wake me up"),
       ("music/song2.wav", "paradise"),
       ("music/song3.wav", "a sky full of stars"),
@@ -92,6 +93,10 @@ def main():
       ("music/song7.wav", "there's nothimg holding me back"),
       ("music/song8.wav", "terminal 3")
    ]
+
+   analyze_songs = [song for song in songs if not is_song_in_db(conn, song[1])]
+
+   conn.close()
 
    query_songs = [
       "music/query_song1.wav",

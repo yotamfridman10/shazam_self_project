@@ -1,4 +1,5 @@
-import csv
+from csv import writer as csv_writer
+from io import StringIO
 
 def init_db(conn, reset_db_flag=False):
     with conn.cursor() as cur:
@@ -23,12 +24,10 @@ def insert_many_fingerprints(cursor, fingerprints_list):
 
 
 def insert_many_fingerprints_copy(conn, fingerprints_list):
-    import io
-
     if not fingerprints_list:
         return
 
-    csv_buffer = io.StringIO()
+    csv_buffer = StringIO()
     for h, song_name, offset in fingerprints_list:
         csv_buffer.write(f"{h},{song_name},{offset}\n")
     csv_buffer.seek(0)
@@ -53,7 +52,7 @@ def insert_many_windows(conn, windows_list):
         return
 
     csv_buffer = io.StringIO()
-    writer = csv.writer(csv_buffer)
+    writer = csv_writer(csv_buffer)
 
     for song_name, window in windows_list:
         postgres_array = "{" + ",".join(map(str, window)) + "}"
@@ -93,3 +92,9 @@ def get_all_windows_by_song(conn, batch_size=10000):
 
         if song_windows:
             yield last_song, song_windows
+
+
+def is_song_in_db(conn, song_name):
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM windows WHERE song_name = %s LIMIT 1", (song_name,))
+        return cur.fetchone() is not None

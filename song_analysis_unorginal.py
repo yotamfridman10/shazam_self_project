@@ -256,7 +256,7 @@ def analyze_new_song(conn, song_file, song_name):
 def analyze_query_song(song_file, conn):
     print(f"[query] {song_file}")
     relative = pipeline(song_file)
-    matches, best_song_match = comparing_windows_by_correlation(conn, relative)
+    matches, best_song_match = comparing_windows_by_edit_distance(conn, relative)
     print(f"  matches: {matches}")
     return best_song_match
     
